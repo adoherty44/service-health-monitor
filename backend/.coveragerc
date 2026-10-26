@@ -1,0 +1,9 @@
+[run]
+source = app
+# SQLAlchemy's async layer runs on greenlets; without this, coverage loses track of
+# any code that executes after the first `await session.execute(...)`.
+concurrency = greenlet,thread
+
+[report]
+show_missing = True
+fail_under = 90
