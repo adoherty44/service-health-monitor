@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     # Developer experience
     seed_demo_targets: bool = True
+    seed_history_days: int = Field(default=7, ge=0, le=14)
+    log_level: str = "INFO"
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     @property
