@@ -1,4 +1,5 @@
 """Demo data seeding and application startup behaviour."""
+
 import random
 from datetime import timedelta
 
@@ -82,7 +83,9 @@ async def test_startup_explains_unreachable_database(monkeypatch):
 
 
 async def test_startup_explains_missing_tables(monkeypatch):
-    monkeypatch.setattr(main, "engine", _BrokenEngine(ProgrammingError("SELECT 1", {}, Exception("no table"))))
+    monkeypatch.setattr(
+        main, "engine", _BrokenEngine(ProgrammingError("SELECT 1", {}, Exception("no table")))
+    )
     with pytest.raises(RuntimeError, match="alembic upgrade head"):
         await main._assert_database_ready()
 

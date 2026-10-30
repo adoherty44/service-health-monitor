@@ -1,4 +1,5 @@
 """Pydantic v2 request/response models: the API contract."""
+
 from datetime import date, datetime
 from typing import Literal
 

@@ -2,6 +2,7 @@
 
 Takes about 30 seconds. Creates a throwaway target and deletes it at the end.
 """
+
 import asyncio
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -65,33 +66,59 @@ async def main() -> None:
     await asyncio.sleep(6)
     failed = await count_logs(tid, healthy=False)
     async with SessionFactory() as s:
-        msg = (await s.execute(
-            select(HealthLog.error_message).where(HealthLog.target_id == tid, HealthLog.is_healthy.is_(False)).limit(1)
-        )).scalar_one_or_none()
+        msg = (
+            await s.execute(
+                select(HealthLog.error_message)
+                .where(HealthLog.target_id == tid, HealthLog.is_healthy.is_(False))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
     print(f"   failed checks stored: {failed} | message: {msg}")
-    print("   real requests during outage:", Stub.hits - hits_before, "->", "PASS" if Stub.hits == hits_before and failed >= 1 else "FAIL")
+    print(
+        "   real requests during outage:",
+        Stub.hits - hits_before,
+        "->",
+        "PASS" if Stub.hits == hits_before and failed >= 1 else "FAIL",
+    )
 
     print("3) Clearing the fault and forcing a check (expect recovery)...")
     simulation.clear_fault(tid)
     log = await scheduler.run_check_now(tid)
-    print(f"   healthy={log.is_healthy} status={log.status_code} latency={log.response_time_ms}ms ->", "PASS" if log.is_healthy else "FAIL")
+    print(
+        f"   healthy={log.is_healthy} status={log.status_code} latency={log.response_time_ms}ms ->",
+        "PASS" if log.is_healthy else "FAIL",
+    )
 
     print("4) Rolling up daily aggregates (single SQL statement)...")
     rows = await rollup_daily_aggregates(SessionFactory, days_back=1)
     async with SessionFactory() as s:
-        agg = (await s.execute(select(UptimeDailyAggregate).where(UptimeDailyAggregate.target_id == tid))).scalar_one()
-    print(f"   rows upserted: {rows} | day={agg.day} total={agg.total_checks} healthy={agg.healthy_checks} "
-          f"uptime={agg.uptime_percentage:.1f}% avg={agg.avg_response_time_ms:.2f}ms p95={agg.p95_response_time_ms:.2f}ms")
+        agg = (
+            await s.execute(
+                select(UptimeDailyAggregate).where(UptimeDailyAggregate.target_id == tid)
+            )
+        ).scalar_one()
+    print(
+        f"   rows upserted: {rows} | day={agg.day} total={agg.total_checks} healthy={agg.healthy_checks} "
+        f"uptime={agg.uptime_percentage:.1f}% avg={agg.avg_response_time_ms:.2f}ms p95={agg.p95_response_time_ms:.2f}ms"
+    )
     print("   ->", "PASS" if agg.total_checks == healthy + failed + 1 else "FAIL")
 
     print("5) Rolling up again must update in place, not duplicate...")
     await rollup_daily_aggregates(SessionFactory, days_back=1)
     async with SessionFactory() as s:
-        n = (await s.execute(select(func.count(UptimeDailyAggregate.id)).where(UptimeDailyAggregate.target_id == tid))).scalar_one()
+        n = (
+            await s.execute(
+                select(func.count(UptimeDailyAggregate.id)).where(
+                    UptimeDailyAggregate.target_id == tid
+                )
+            )
+        ).scalar_one()
     print(f"   aggregate rows for this target: {n} ->", "PASS" if n == 1 else "FAIL")
 
     print("6) Pruning with default retention must not delete today's data...")
-    logs_deleted, _ = await prune_old_data(SessionFactory, cfg.raw_log_retention_days, cfg.aggregate_retention_days)
+    logs_deleted, _ = await prune_old_data(
+        SessionFactory, cfg.raw_log_retention_days, cfg.aggregate_retention_days
+    )
     print(f"   logs deleted: {logs_deleted} ->", "PASS" if await count_logs(tid) > 0 else "FAIL")
 
     await scheduler.stop()

@@ -1,13 +1,14 @@
 """Chaos engine: pure in-memory logic, so these run without a database."""
+
 import socket
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 
 from app import simulation
 from app.scheduler import _is_dns_failure
-from app.simulation import FaultType, SIMULATED_PREFIX
+from app.simulation import SIMULATED_PREFIX, FaultType
 
 
 def test_inject_activates_fault_and_exposes_mapping():
@@ -40,7 +41,7 @@ def test_timed_fault_expires_lazily_and_cleans_both_structures():
     details = simulation.inject_fault(1, FaultType.TIMEOUT, duration_seconds=30)
     assert details.expires_at is not None
     assert simulation.get_active_fault(1) is FaultType.TIMEOUT
-    details.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)  # time passes
+    details.expires_at = datetime.now(UTC) - timedelta(seconds=1)  # time passes
     assert simulation.get_active_fault(1) is None
     assert 1 not in simulation.INJECTED_FAULTS
 
@@ -55,7 +56,7 @@ def test_list_active_faults_is_sorted_and_skips_expired():
     simulation.inject_fault(3, FaultType.TIMEOUT)
     simulation.inject_fault(1, FaultType.DNS_FAILURE)
     expired = simulation.inject_fault(2, FaultType.SERVER_ERROR, duration_seconds=5)
-    expired.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    expired.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     assert [f.target_id for f in simulation.list_active_faults()] == [1, 3]
 
 

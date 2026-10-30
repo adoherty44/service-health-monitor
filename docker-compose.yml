@@ -16,5 +16,35 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot job: applies database migrations, then exits. The API waits for it to finish.
+  migrate:
+    build: ./backend
+    image: monitor-api
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://monitor:monitor@db:5432/monitor
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      disable: true  # inherited from the image, but this one-shot job is not a server
+
+  api:
+    build: ./backend
+    image: monitor-api
+    container_name: monitor-api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://monitor:monitor@db:5432/monitor
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   pgdata:

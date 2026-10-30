@@ -2,6 +2,7 @@
 
 Usage:  python -m scripts.reset_demo --yes
 """
+
 import argparse
 import asyncio
 
@@ -20,7 +21,9 @@ async def main(confirmed: bool) -> None:
     async with SessionFactory() as session:
         await session.execute(delete(Target))  # logs and aggregates cascade
         await session.commit()
-    await seed_demo_data(SessionFactory, settings.seed_history_days, settings.request_timeout_seconds)
+    await seed_demo_data(
+        SessionFactory, settings.seed_history_days, settings.request_timeout_seconds
+    )
     print(f"Demo data reset ({settings.seed_history_days} day(s) of history).")
     await engine.dispose()
 

@@ -1,4 +1,5 @@
 """Alembic environment (async, URL taken from app settings)."""
+
 import asyncio
 from logging.config import fileConfig
 

@@ -1,4 +1,5 @@
 """Typed, environment-driven configuration (pydantic-settings)."""
+
 from functools import lru_cache
 
 from pydantic import Field

@@ -1,6 +1,8 @@
 """Scheduler: real checks, chaos interception, reconciliation, rollups and pruning."""
+
 import asyncio
-from datetime import datetime, time as dtime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from datetime import time as dtime
 
 import pytest
 import pytest_asyncio
@@ -36,13 +38,17 @@ async def scheduler():
 async def count_logs(target_id: int) -> int:
     async with SessionFactory() as session:
         return (
-            await session.execute(select(func.count(HealthLog.id)).where(HealthLog.target_id == target_id))
+            await session.execute(
+                select(func.count(HealthLog.id)).where(HealthLog.target_id == target_id)
+            )
         ).scalar_one()
 
 
-def day_at(days_ago: int, hour: int = 12, minute: int = 0, second: int = 0, micro: int = 0) -> datetime:
+def day_at(
+    days_ago: int, hour: int = 12, minute: int = 0, second: int = 0, micro: int = 0
+) -> datetime:
     day = utcnow().date() - timedelta(days=days_ago)
-    return datetime.combine(day, dtime(hour, minute, second, micro), tzinfo=timezone.utc)
+    return datetime.combine(day, dtime(hour, minute, second, micro), tzinfo=UTC)
 
 
 # --- A single check ------------------------------------------------------------------
@@ -51,7 +57,9 @@ async def test_healthy_check_is_recorded_with_subsecond_latency(scheduler, stub)
     log = await scheduler.run_check_now(tid)
     assert log.is_healthy and log.status_code == 200 and log.error_message is None
     assert 0 < log.response_time_ms < 1_000
-    assert log.response_time_ms == round(log.response_time_ms, 3)  # stored at microsecond resolution
+    assert log.response_time_ms == round(
+        log.response_time_ms, 3
+    )  # stored at microsecond resolution
     assert await count_logs(tid) == 1
 
 
@@ -184,8 +192,14 @@ async def get_aggregates(target_id: int) -> list[UptimeDailyAggregate]:
 async def test_rollup_computes_exact_statistics():
     tid = await add_target_row()
     healthy = [10.0, 20.0, 30.0, 40.0, 50.0]
-    rows = [dict(timestamp=day_at(3, minute=i), response_time_ms=v, is_healthy=True) for i, v in enumerate(healthy)]
-    rows += [dict(timestamp=day_at(3, minute=10 + i), response_time_ms=999.0, is_healthy=False) for i in range(2)]
+    rows = [
+        dict(timestamp=day_at(3, minute=i), response_time_ms=v, is_healthy=True)
+        for i, v in enumerate(healthy)
+    ]
+    rows += [
+        dict(timestamp=day_at(3, minute=10 + i), response_time_ms=999.0, is_healthy=False)
+        for i in range(2)
+    ]
     await add_logs(tid, rows)
 
     await rollup_daily_aggregates(SessionFactory, days_back=5)
@@ -193,18 +207,28 @@ async def test_rollup_computes_exact_statistics():
     assert (agg.total_checks, agg.healthy_checks) == (7, 5)
     assert agg.uptime_percentage == pytest.approx(71.4286, abs=1e-3)
     # Latency stats exclude the two failures (999ms) entirely.
-    assert (agg.min_response_time_ms, agg.avg_response_time_ms, agg.max_response_time_ms) == (10.0, 30.0, 50.0)
-    assert agg.p95_response_time_ms == pytest.approx(48.0)  # continuous percentile: 40 + 0.8 * (50 - 40)
+    assert (agg.min_response_time_ms, agg.avg_response_time_ms, agg.max_response_time_ms) == (
+        10.0,
+        30.0,
+        50.0,
+    )
+    assert agg.p95_response_time_ms == pytest.approx(
+        48.0
+    )  # continuous percentile: 40 + 0.8 * (50 - 40)
 
 
 async def test_rollup_is_an_idempotent_upsert():
     tid = await add_target_row()
-    await add_logs(tid, [dict(timestamp=day_at(1, minute=0), response_time_ms=10.0, is_healthy=True)])
+    await add_logs(
+        tid, [dict(timestamp=day_at(1, minute=0), response_time_ms=10.0, is_healthy=True)]
+    )
     await rollup_daily_aggregates(SessionFactory, days_back=3)
     await rollup_daily_aggregates(SessionFactory, days_back=3)
     assert len(await get_aggregates(tid)) == 1
 
-    await add_logs(tid, [dict(timestamp=day_at(1, minute=5), response_time_ms=30.0, is_healthy=False)])
+    await add_logs(
+        tid, [dict(timestamp=day_at(1, minute=5), response_time_ms=30.0, is_healthy=False)]
+    )
     await rollup_daily_aggregates(SessionFactory, days_back=3)
     (agg,) = await get_aggregates(tid)
     assert (agg.total_checks, agg.healthy_checks) == (2, 1)  # updated in place, no duplicate row
@@ -234,7 +258,13 @@ async def test_rollup_ignores_days_outside_the_window():
 
 async def test_all_failed_day_has_zero_uptime_and_null_latency():
     tid = await add_target_row()
-    await add_logs(tid, [dict(timestamp=day_at(1, minute=i), response_time_ms=5.0, is_healthy=False) for i in range(3)])
+    await add_logs(
+        tid,
+        [
+            dict(timestamp=day_at(1, minute=i), response_time_ms=5.0, is_healthy=False)
+            for i in range(3)
+        ],
+    )
     await rollup_daily_aggregates(SessionFactory, days_back=2)
     (agg,) = await get_aggregates(tid)
     assert agg.uptime_percentage == 0.0 and agg.healthy_checks == 0
@@ -254,7 +284,9 @@ async def test_rollup_handles_multiple_targets_in_one_pass():
 async def test_prune_deletes_whole_days_only():
     tid = await add_target_row()
     today = utcnow().date()
-    keep_edge = datetime.combine(today - timedelta(days=14), dtime(0, 0, 0), tzinfo=timezone.utc)  # first kept second
+    keep_edge = datetime.combine(
+        today - timedelta(days=14), dtime(0, 0, 0), tzinfo=UTC
+    )  # first kept second
     drop_edge = keep_edge - timedelta(microseconds=1)  # last dropped moment
     await add_logs(
         tid,
@@ -265,13 +297,21 @@ async def test_prune_deletes_whole_days_only():
             dict(timestamp=day_at(0, minute=0), response_time_ms=1.0, is_healthy=True),
         ],
     )
-    logs_deleted, _ = await prune_old_data(SessionFactory, raw_retention_days=14, aggregate_retention_days=30)
+    logs_deleted, _ = await prune_old_data(
+        SessionFactory, raw_retention_days=14, aggregate_retention_days=30
+    )
     assert logs_deleted == 2 and await count_logs(tid) == 2
 
 
 async def test_history_survives_pruning_of_raw_logs():
     tid = await add_target_row()
-    await add_logs(tid, [dict(timestamp=day_at(20, minute=i), response_time_ms=10.0, is_healthy=True) for i in range(4)])
+    await add_logs(
+        tid,
+        [
+            dict(timestamp=day_at(20, minute=i), response_time_ms=10.0, is_healthy=True)
+            for i in range(4)
+        ],
+    )
     await rollup_daily_aggregates(SessionFactory, days_back=25)
     await prune_old_data(SessionFactory, raw_retention_days=14, aggregate_retention_days=30)
     assert await count_logs(tid) == 0
@@ -286,13 +326,18 @@ async def test_prune_removes_expired_aggregates():
     async with SessionFactory() as session:
         session.add_all(
             UptimeDailyAggregate(
-                target_id=tid, day=utcnow().date() - timedelta(days=age),
-                total_checks=1, healthy_checks=1, uptime_percentage=100.0,
+                target_id=tid,
+                day=utcnow().date() - timedelta(days=age),
+                total_checks=1,
+                healthy_checks=1,
+                uptime_percentage=100.0,
             )
             for age in (5, 29, 31, 60)
         )
         await session.commit()
-    _, aggs_deleted = await prune_old_data(SessionFactory, raw_retention_days=14, aggregate_retention_days=30)
+    _, aggs_deleted = await prune_old_data(
+        SessionFactory, raw_retention_days=14, aggregate_retention_days=30
+    )
     assert aggs_deleted == 2 and len(await get_aggregates(tid)) == 2
 
 
@@ -300,16 +345,25 @@ async def test_prune_removes_expired_aggregates():
 async def test_maintenance_loop_reconciles_rolls_up_and_prunes():
     instance = HealthCheckScheduler(
         SessionFactory,
-        Settings(request_timeout_seconds=1, scheduler_initial_jitter_seconds=3600, maintenance_interval_seconds=1),
+        Settings(
+            request_timeout_seconds=1,
+            scheduler_initial_jitter_seconds=3600,
+            maintenance_interval_seconds=1,
+        ),
     )
     await instance.start()
     try:
         # Created behind the scheduler's back: only the maintenance loop can notice it.
         tid = await add_target_row(name="late-arrival")
-        await add_logs(tid, [
-            dict(timestamp=day_at(1), response_time_ms=10.0, is_healthy=True),
-            dict(timestamp=day_at(20), response_time_ms=10.0, is_healthy=True),  # beyond raw retention
-        ])
+        await add_logs(
+            tid,
+            [
+                dict(timestamp=day_at(1), response_time_ms=10.0, is_healthy=True),
+                dict(
+                    timestamp=day_at(20), response_time_ms=10.0, is_healthy=True
+                ),  # beyond raw retention
+            ],
+        )
         assert tid not in instance._monitors
 
         await asyncio.sleep(1.8)  # one maintenance cycle
@@ -331,7 +385,11 @@ async def test_maintenance_loop_survives_a_failing_cycle(monkeypatch):
     monkeypatch.setattr("app.scheduler.rollup_daily_aggregates", flaky)
     instance = HealthCheckScheduler(
         SessionFactory,
-        Settings(request_timeout_seconds=1, scheduler_initial_jitter_seconds=3600, maintenance_interval_seconds=1),
+        Settings(
+            request_timeout_seconds=1,
+            scheduler_initial_jitter_seconds=3600,
+            maintenance_interval_seconds=1,
+        ),
     )
     # start() also calls the (patched) rollup; that failure must be tolerated as well.
     await instance.start()

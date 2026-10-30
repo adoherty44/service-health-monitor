@@ -1,6 +1,7 @@
 """REST API: target CRUD, historical analytics, and fault injection."""
+
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -49,7 +50,7 @@ SchedulerDep = Annotated[HealthCheckScheduler, Depends(get_scheduler)]
 
 
 def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 def _round(value: float | None, digits: int = 3) -> float | None:
@@ -122,7 +123,9 @@ def _decode_cursor(cursor: str) -> tuple[datetime, int]:
 
 
 # --- Targets: CRUD -----------------------------------------------------------------
-@router.post("/targets", response_model=TargetRead, status_code=status.HTTP_201_CREATED, tags=["targets"])
+@router.post(
+    "/targets", response_model=TargetRead, status_code=status.HTTP_201_CREATED, tags=["targets"]
+)
 async def create_target(payload: TargetCreate, session: SessionDep, scheduler: SchedulerDep):
     target = Target(name=payload.name, url=payload.url, check_interval=payload.check_interval)
     session.add(target)
@@ -210,18 +213,20 @@ async def get_target_logs(
         conditions.append(HealthLog.is_healthy.is_(healthy))
     if cursor is not None:
         cursor_ts, cursor_id = _decode_cursor(cursor)
-        conditions.append(
-            tuple_(HealthLog.timestamp, HealthLog.id) < tuple_(cursor_ts, cursor_id)
-        )
+        conditions.append(tuple_(HealthLog.timestamp, HealthLog.id) < tuple_(cursor_ts, cursor_id))
 
     rows = (
-        await session.execute(
-            select(HealthLog)
-            .where(*conditions)
-            .order_by(HealthLog.timestamp.desc(), HealthLog.id.desc())
-            .limit(limit + 1)  # one extra row tells us whether another page exists
+        (
+            await session.execute(
+                select(HealthLog)
+                .where(*conditions)
+                .order_by(HealthLog.timestamp.desc(), HealthLog.id.desc())
+                .limit(limit + 1)  # one extra row tells us whether another page exists
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     page, has_more = rows[:limit], len(rows) > limit
     return HealthLogPage(
         items=[HealthLogRead.model_validate(r) for r in page],
@@ -330,7 +335,9 @@ async def get_target_analytics(
     )
 
 
-@router.get("/targets/{target_id}/aggregates", response_model=list[DailyAggregateRead], tags=["analytics"])
+@router.get(
+    "/targets/{target_id}/aggregates", response_model=list[DailyAggregateRead], tags=["analytics"]
+)
 async def get_target_daily_aggregates(
     target_id: int,
     session: SessionDep,
@@ -376,7 +383,9 @@ async def get_overview(session: SessionDep):
                 select(
                     HealthLog.target_id,
                     func.count(HealthLog.id).label("total"),
-                    func.count(HealthLog.id).filter(HealthLog.is_healthy.is_(True)).label("healthy"),
+                    func.count(HealthLog.id)
+                    .filter(HealthLog.is_healthy.is_(True))
+                    .label("healthy"),
                 )
                 .where(HealthLog.timestamp >= since)
                 .group_by(HealthLog.target_id)
@@ -426,7 +435,9 @@ async def inject_fault(target_id: int, payload: FaultInject, session: SessionDep
     )
 
 
-@router.post("/targets/{target_id}/faults/clear", response_model=FaultClearResult, tags=["simulation"])
+@router.post(
+    "/targets/{target_id}/faults/clear", response_model=FaultClearResult, tags=["simulation"]
+)
 async def clear_fault(target_id: int, session: SessionDep):
     """End a simulated outage; the next check hits the real endpoint (recovery)."""
     await _get_target_or_404(session, target_id)

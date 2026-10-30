@@ -11,17 +11,18 @@ asyncio event loop. Every function below is synchronous (no await), so each
 mutation is atomic with respect to other coroutines and no locking is needed.
 The state is per process, so run a single worker.
 """
+
 import random
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from enum import Enum
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 
 # Fabricated messages start with this marker so simulated failures are
 # unmistakable in logs, SQL, and the UI.
 SIMULATED_PREFIX = "[SIMULATED] "
 
 
-class FaultType(str, Enum):
+class FaultType(StrEnum):
     TIMEOUT = "TIMEOUT"
     SERVER_ERROR = "500_ERROR"
     DNS_FAILURE = "DNS_FAILURE"
@@ -52,7 +53,7 @@ _FAULT_DETAILS: dict[int, FaultDetails] = {}
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def inject_fault(

@@ -1,4 +1,5 @@
 """Helpers shared by test modules."""
+
 from app.database import SessionFactory
 from app.models import HealthLog, Target
 
@@ -12,7 +13,9 @@ async def make_target(client, url: str, name: str = "target", interval: int = 36
     return response.json()
 
 
-async def add_target_row(name: str = "row", url: str = "http://127.0.0.1:9/", interval: int = 3600) -> int:
+async def add_target_row(
+    name: str = "row", url: str = "http://127.0.0.1:9/", interval: int = 3600
+) -> int:
     """Insert a target directly (bypassing the API) and return its id."""
     async with SessionFactory() as session:
         target = Target(name=name, url=url, check_interval=interval)

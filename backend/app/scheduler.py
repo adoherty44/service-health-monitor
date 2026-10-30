@@ -13,13 +13,15 @@ Design
 * Before any real network I/O the chaos engine is consulted; an active fault
   short-circuits the check with a fabricated result.
 """
+
 import asyncio
 import logging
 import random
 import socket
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, time as dtime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
+from datetime import time as dtime
 
 import httpx
 from sqlalchemy import Date, cast, delete, func, select
@@ -56,7 +58,7 @@ class CheckOutcome:
 # Aggregation & retention (module-level functions so they are directly testable)
 # --------------------------------------------------------------------------------
 def _midnight_utc(day: date) -> datetime:
-    return datetime.combine(day, dtime.min, tzinfo=timezone.utc)
+    return datetime.combine(day, dtime.min, tzinfo=UTC)
 
 
 async def rollup_daily_aggregates(
@@ -227,14 +229,18 @@ class HealthCheckScheduler:
 
             for target_id, spec in desired.items():
                 if target_id not in self._monitors:
-                    task = asyncio.create_task(self._monitor_loop(spec), name=f"monitor-{target_id}")
+                    task = asyncio.create_task(
+                        self._monitor_loop(spec), name=f"monitor-{target_id}"
+                    )
                     self._monitors[target_id] = (spec, task)
 
     # -- per-target loop -------------------------------------------------------
     async def _monitor_loop(self, spec: TargetSpec) -> None:
         loop = asyncio.get_running_loop()
         # Spread first checks out so N targets do not all fire in the same instant.
-        jitter_cap = min(float(spec.check_interval), self._settings.scheduler_initial_jitter_seconds)
+        jitter_cap = min(
+            float(spec.check_interval), self._settings.scheduler_initial_jitter_seconds
+        )
         if jitter_cap > 0:
             await asyncio.sleep(random.uniform(0.0, jitter_cap))
 
@@ -275,7 +281,10 @@ class HealthCheckScheduler:
             await session.commit()
         logger.debug(
             "target=%s healthy=%s latency=%.3fms error=%s",
-            spec.id, outcome.is_healthy, outcome.response_time_ms, outcome.error_message,
+            spec.id,
+            outcome.is_healthy,
+            outcome.response_time_ms,
+            outcome.error_message,
         )
         return log
 
@@ -284,7 +293,9 @@ class HealthCheckScheduler:
         async with self._session_factory() as session:
             row = (
                 await session.execute(
-                    select(Target.id, Target.url, Target.check_interval).where(Target.id == target_id)
+                    select(Target.id, Target.url, Target.check_interval).where(
+                        Target.id == target_id
+                    )
                 )
             ).one_or_none()
         if row is None:

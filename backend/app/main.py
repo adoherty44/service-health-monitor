@@ -1,4 +1,5 @@
 """Application entrypoint: wires the database, scheduler, CORS and routes together."""
+
 import logging
 from contextlib import asynccontextmanager
 
@@ -22,7 +23,10 @@ logger = logging.getLogger("monitor.main")
 
 OPENAPI_TAGS = [
     {"name": "targets", "description": "Manage monitored endpoints and trigger on-demand checks."},
-    {"name": "analytics", "description": "Uptime history, latency percentiles and dashboard summaries."},
+    {
+        "name": "analytics",
+        "description": "Uptime history, latency percentiles and dashboard summaries.",
+    },
     {"name": "simulation", "description": "Chaos engine: inject and clear simulated outages."},
     {"name": "system", "description": "Liveness and readiness probes."},
 ]
@@ -35,7 +39,7 @@ async def _assert_database_ready() -> None:
             await conn.execute(text("SELECT 1 FROM targets LIMIT 1"))
     except OSError as exc:
         raise RuntimeError(
-            "Cannot reach PostgreSQL. Is it running? Start it with: docker compose up -d"
+            "Cannot reach PostgreSQL. Is it running? Start it with: docker compose up -d db"
         ) from exc
     except ProgrammingError as exc:
         raise RuntimeError("Database tables are missing. Run: alembic upgrade head") from exc

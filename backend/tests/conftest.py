@@ -7,6 +7,7 @@ would test nothing worth testing.
 Safety: the suite DROPS the public schema of the test database on every run. It refuses
 to start unless the database name ends in "_test", so it can never touch your dev data.
 """
+
 import asyncio
 import os
 import subprocess
@@ -82,7 +83,8 @@ def _database():
         asyncio.run(_prepare_database(url))
     except OSError:
         pytest.exit(
-            "Cannot reach PostgreSQL for tests. Start it with: docker compose up -d", returncode=2
+            "Cannot reach PostgreSQL for tests. Start it with: docker compose up -d db",
+            returncode=2,
         )
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],

@@ -4,6 +4,7 @@ A fresh install should show something worth looking at: multi-day latency curves
 daily uptime bars, and a few past incidents. Backfilled failures are produced by the
 chaos engine's own generator, so they carry the same [SIMULATED] label as live drills.
 """
+
 import logging
 import math
 import random
@@ -29,7 +30,12 @@ _INSERT_CHUNK = 2_000
 
 
 def _generate_history(
-    target_id: int, base_ms: float, days: int, end: datetime, timeout_seconds: float, rng: random.Random
+    target_id: int,
+    base_ms: float,
+    days: int,
+    end: datetime,
+    timeout_seconds: float,
+    rng: random.Random,
 ) -> list[dict]:
     steps = days * 86_400 // HISTORY_STEP_SECONDS
     start = end - timedelta(days=days)
@@ -54,8 +60,12 @@ def _generate_history(
             sim = build_simulated_outcome(fault, timeout_seconds)
             rows.append(
                 dict(
-                    target_id=target_id, timestamp=ts, response_time_ms=sim.response_time_ms,
-                    is_healthy=False, status_code=sim.status_code, error_message=sim.error_message,
+                    target_id=target_id,
+                    timestamp=ts,
+                    response_time_ms=sim.response_time_ms,
+                    is_healthy=False,
+                    status_code=sim.status_code,
+                    error_message=sim.error_message,
                 )
             )
             continue
@@ -69,8 +79,12 @@ def _generate_history(
                 latency *= multiplier
         rows.append(
             dict(
-                target_id=target_id, timestamp=ts, response_time_ms=round(latency, 3),
-                is_healthy=True, status_code=200, error_message=None,
+                target_id=target_id,
+                timestamp=ts,
+                response_time_ms=round(latency, 3),
+                is_healthy=True,
+                status_code=200,
+                error_message=None,
             )
         )
     return rows
@@ -90,9 +104,14 @@ async def seed_demo_data(
         if history_days > 0:
             end = utcnow() - timedelta(minutes=1)  # leave room for live checks to continue it
             total = 0
-            for index, (target, spec) in enumerate(zip(targets, DEMO_TARGETS)):
+            for index, (target, spec) in enumerate(zip(targets, DEMO_TARGETS, strict=True)):
                 rows = _generate_history(
-                    target.id, spec[3], history_days, end, timeout_seconds, random.Random(42 + index)
+                    target.id,
+                    spec[3],
+                    history_days,
+                    end,
+                    timeout_seconds,
+                    random.Random(42 + index),
                 )
                 for offset in range(0, len(rows), _INSERT_CHUNK):
                     await session.execute(insert(HealthLog), rows[offset : offset + _INSERT_CHUNK])

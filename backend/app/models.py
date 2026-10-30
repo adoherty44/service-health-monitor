@@ -6,7 +6,8 @@ Tables
 * health_logs             - one row per executed (or simulated) check; high volume.
 * uptime_daily_aggregates - one row per target per UTC day; survives raw-log pruning.
 """
-from datetime import date, datetime, timezone
+
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     BigInteger,
@@ -39,7 +40,7 @@ NAMING_CONVENTION = {
 
 def utcnow() -> datetime:
     """Current time as a timezone-aware UTC datetime."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):
@@ -50,9 +51,7 @@ class Target(Base):
     """A website or API endpoint that is polled on a fixed interval."""
 
     __tablename__ = "targets"
-    __table_args__ = (
-        CheckConstraint("check_interval > 0", name="check_interval_positive"),
-    )
+    __table_args__ = (CheckConstraint("check_interval > 0", name="check_interval_positive"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
@@ -75,9 +74,7 @@ class HealthLog(Base):
     """
 
     __tablename__ = "health_logs"
-    __table_args__ = (
-        CheckConstraint("response_time_ms >= 0", name="latency_non_negative"),
-    )
+    __table_args__ = (CheckConstraint("response_time_ms >= 0", name="latency_non_negative"),)
 
     # BIGINT: this is the high-volume table and must not hit a 32-bit ceiling.
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

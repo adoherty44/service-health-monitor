@@ -1,0 +1,26 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # import sorting
+    "UP",       # modern Python syntax
+    "B",        # likely bugs (flake8-bugbear)
+    "ASYNC",    # async pitfalls
+    "SIM",      # simplifications
+    "C4",       # comprehensions
+]
+ignore = [
+    "E501",     # line length is handled by the formatter
+    "C408",     # dict(key=value) reads better for row-shaped data
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E731"]   # short lambdas are fine in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
