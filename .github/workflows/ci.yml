@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: this pipeline only needs to read the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run that is now out of date.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Lint and test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      # A real PostgreSQL, matching docker-compose.yml. The test suite creates its own
+      # `monitor_test` database inside it and wipes that database on every run.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: monitor
+          POSTGRES_PASSWORD: monitor
+          POSTGRES_DB: monitor
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U monitor -d monitor"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Test with coverage (fails below 90%)
+        run: pytest --cov=app --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: backend/coverage.xml
+
+  docker-smoke:
+    name: Docker stack smoke test
+    runs-on: ubuntu-latest
+    needs: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start the full stack
+        run: docker compose up -d --build
+
+      - name: Wait for the API to become ready
+        run: |
+          for i in $(seq 1 45); do
+            if curl -sf http://localhost:8000/ready > /dev/null; then
+              echo "API ready after about $((i * 2))s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not become ready within 90s"
+          docker compose logs
+          exit 1
+
+      - name: Smoke test - detection and recovery
+        run: |
+          set -euo pipefail
+          api=http://localhost:8000
+
+          test "$(curl -sf $api/health)" = '{"status":"ok"}'
+
+          # First seeded target is the API's own /health endpoint, so it is reliably healthy.
+          id=$(curl -sf $api/api/targets | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+
+          curl -sf -X POST $api/api/targets/$id/faults/inject \
+            -H 'content-type: application/json' -d '{"fault_type":"500_ERROR"}' > /dev/null
+          code=$(curl -sf -X POST $api/api/targets/$id/check \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['status_code'])")
+          test "$code" = "500"
+          echo "outage detected"
+
+          curl -sf -X POST $api/api/targets/$id/faults/clear > /dev/null
+          healthy=$(curl -sf -X POST $api/api/targets/$id/check \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['is_healthy'])")
+          test "$healthy" = "True"
+          echo "recovery confirmed"
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
