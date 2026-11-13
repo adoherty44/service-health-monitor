@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 
 # ---- Build stage: install dependencies into an isolated virtualenv ----
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
 WORKDIR /build
 COPY requirements.txt .
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install -r requirements.txt
 
 # ---- Runtime stage: slim image with only what the app needs ----
-FROM python:3.12-slim
+FROM python:3.15-slim
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
